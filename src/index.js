@@ -1,69 +1,47 @@
-import {
-    preload,
-    cssSupport,
-} from './utils';
+import { preload, ImageBlur } from './utils';
 
-export default function blurify(options) {
-    if (!(this instanceof blurify)) return new blurify(...arguments);
+function blurify (thumbs, options) {
 
-    if (typeof options === 'number') {
-        options = {
-            blur: options,
-            images: arguments[1],
-            mode: 'auto',
-        };
-    }
+    this.options = typeof options === 'object' ? options : {};
 
-    this.options = options;
-    this.blur = options.blur || 6;
-    this.mode = options.mode || 'css';
-    this.$els = options.images.nodeType === 1 ? [options.images] : [].slice.call(options.images);
+    this.renderOriginalImage = function (img) {
+            img.thumb.parentNode.appendChild(img);
+            window.getComputedStyle(img).opacity; // we need a paint reflow
+            img.thumb.parentNode.className += ' is-image-loaded';
+    };
 
-    if (this.mode == 'auto') {
-        cssSupport('filter', 'blur(1px)') ? this.useCSSMode() : this.useCanvasMode();
-    } else if (this.mode == 'css') {
-        this.blur = this.blur / 2;
-        this.useCSSMode();
-    } else {
-        this.useCanvasMode();
-    }
+    this.preloadThumbs = function (thumbs) {
+        preload(thumbs, this.loadThumbCb);
+    };
+
+    this.preloadImages = function (thumbs) {
+        if (this.options.waypointsCb && window.Waypoints) {
+            this.options.waypointsCb(thumbs);
+        } else {
+            let images = [];
+            for (var i=0;i<thumbs.length;i++) {
+                let image = document.createElement('img');
+                image.thumb = thumbs[i];
+                image.src = thumbs[i].dataset.original;
+                images[images.length] = image;
+            }
+            preload(images, this.loadImageCb);
+        }
+    };
+
+    this.loadThumbCb = function (thumb) {
+        let canvas = document.createElement('canvas');
+        thumb.parentNode.insertBefore(canvas,thumb.nextElementSibling);
+        ImageBlur(thumb, canvas, this.options.blurRadius, this.options.alphaChannel);
+    }.bind(this);
+
+    this.loadImageCb = function (img) {
+        this.renderOriginalImage(img);
+    }.bind(this);
+
+    // run
+    this.preloadThumbs(thumbs);
+    this.preloadImages(thumbs);
 }
 
-blurify.prototype.useCSSMode = function () {
-    this.$els.map(el => {
-        el.src = el.dataset ? el.dataset.src : el.getAttribute('data-src');
-        el.style['filter'] = el.style['-webkit-filter'] = `blur(${this.blur}px)`;
-    });
-};
-
-blurify.prototype.useCanvasMode = function () {
-    this.imageType = this.options.imageType || `image/jpeg`;
-    preload(this.$els).done(images => {
-        images.map((image, index) => {
-            this.$els[index].src = this.getDataURL(image);
-        });
-    });
-};
-
-blurify.prototype.blurify = function(canvas, blur) {
-    let ctx = canvas.getContext('2d');
-    ctx.globalAlpha = 1 / (2 * blur);
-    for (let y = -blur; y <= blur; y += 2) {
-        for (let x = -blur; x <= blur; x += 2) {
-            ctx.drawImage(canvas, x, y);
-            if (x >= 0 && y >= 0) ctx.drawImage(canvas, -(x - 1), -(y - 1));
-        }
-    }
-    ctx.globalAlpha = 1;
-};
-
-blurify.prototype.getDataURL = function(image) {
-    let canvas = document.createElement('canvas'),
-        ctx = canvas.getContext('2d');
-
-    canvas.width = image.width;
-    canvas.height = image.height;
-    ctx.drawImage(image, 0, 0);
-    this.blurify(canvas, this.blur);
-    return canvas.toDataURL(this.imageType);
-};
+export default blurify;
